@@ -1,0 +1,61 @@
+name: Import CSV to Issues
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Read CSV and create issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let csv = fs.readFileSync('tasks.csv', 'utf8');
+            if (csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
+            const lines = csv.split(/\r?\n/);
+            const headers = lines[0].split(',');
+            const titleIdx = headers.indexOf('title');
+            const descIdx = headers.indexOf('description');
+            const catIdx = headers.indexOf('category');
+            const riskIdx = headers.indexOf('risk');
+            const dueIdx = headers.indexOf('due_date');
+            const progIdx = headers.indexOf('progress');
+
+            for (let i = 1; i < lines.length; i++) {
+              if (!lines[i].trim()) continue;
+              const fields = lines[i].split(',');
+              const title = fields[titleIdx]?.trim();
+              if (!title) continue;
+
+              const description = fields[descIdx]?.trim() || '';
+              const category = fields[catIdx]?.trim();
+              const risk = fields[riskIdx]?.trim();
+              const due_date = fields[dueIdx]?.trim();
+              const progress = fields[progIdx]?.trim();
+
+              let body = description;
+              if (progress) body += `\n\n**進度**：${progress}`;
+              if (risk) body += `\n**風險**：${risk}`;
+              if (due_date) body += `\n**截止日期**：${due_date}`;
+
+              const labels = [];
+              if (risk && risk !== '未知') labels.push(risk);
+              if (category && category !== '未知') labels.push(category);
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body || '（無詳細說明）',
+                labels: labels,
+              });
+              await new Promise(r => setTimeout(r, 500));
+            }
