@@ -1,0 +1,47 @@
+name: Import CSV to Issues
+
+on:
+  workflow_dispatch:   # 允许你手动触发
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write    # 授予创建 Issue 的权限
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Read CSV and create issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const csv = fs.readFileSync('tasks.csv', 'utf8');
+            const rows = csv.trim().split('\n').slice(1); // 去掉表头
+            for (const row of rows) {
+              const [title, description, category, assignee, risk, due_date, progress] = row.split(',');
+              if (!title) continue;
+              
+              let body = description || '';
+              if (progress) body += `\n\n**進度**：${progress}`;
+              if (risk) body += `\n**風險**：${risk}`;
+              if (due_date) body += `\n**截止日期**：${due_date}`;
+              
+              const labels = [risk, category].filter(l => l && l !== '未知');
+              
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title.trim(),
+                body: body || '（無詳細說明）',
+                assignee: assignee === '未知' ? undefined : assignee,
+                labels: labels,
+                // 如果需要设置截止日期，可取消下面注释（注意日期格式必须为 ISO 8601）
+                // due_date: due_date ? new Date(due_date).toISOString() : undefined
+              });
+              
+              // 避免请求过快
+              await new Promise(r => setTimeout(r, 500));
+            }
